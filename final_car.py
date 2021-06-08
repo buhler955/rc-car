@@ -29,7 +29,7 @@ cam.framerate = 30
 raw_capture = PiRGBArray(cam, size=(WIDTH, HEIGHT))
 #-------------------------------------------------------------------------------
 
-#Set up esc and steering servo constants
+#Set up esc and steering servo constants and variables
 
 #-------------------------------------------------------------------------------
 ESC = 18 #GPIO for ESC (Motor)
@@ -37,13 +37,13 @@ pi = pigpio.pi();
 pi.set_servo_pulsewidth(ESC, 0)
 STOP = 1500 #Pulsewidth for stop - in microseconds
 FORWARD = 1400 #Pulsewidth for moving forward - in microseconds
-SPEED = 1400 #Current Speed
+speed = 1400 #Current Speed pulsewidth- in microseconds
 
 STEER = 13 #GPIO for steering servo
-MID = 1400 #Pulsewidth for steering straight
-LEFT = 1050 #Pulsewidth for full left
-RIGHT = 1750 #Pulsewidth for full right
-DIRECTION = MID #Current Direction
+MID = 1400 #Pulsewidth for steering straight - in microseconds
+LEFT = 1050 #Pulsewidth for full left - in microseconds
+RIGHT = 1750 #Pulsewidth for full right - in microseconds
+direction = MID #Current Direction - in microseconds
 #-------------------------------------------------------------------------------
 
 #Function Definitions
@@ -66,6 +66,7 @@ def get_area(img):
 	return masked_img
 #-------------------------------------------------------------------------------
 def average_lines(image, lines):
+    global direction
 	left = [] #Lines on left of screen
 	right = [] #Lines of right of screen
 	lanes = []
@@ -93,7 +94,7 @@ def average_lines(image, lines):
 				right_line = get_line(image, right_average) #Makes right line out of the average slope and intercept
 				lanes.append(right_line)
 		except Exception: #Unable to make line
-			DIRECTION = MID	
+			direction = MID	
 	return np.array(lanes)
 #-------------------------------------------------------------------------------
 def get_line(image, line_specs):
@@ -107,8 +108,8 @@ def get_line(image, line_specs):
 	return np.array([x1, y1, x2, y2])
 #-------------------------------------------------------------------------------
 def find_dir(lines):
-	global DIRECTION
-	global SPEED
+	global direction
+	global speed
 	gain1 = 480 #Gain for 1 line
 	gain2a = 6 #Gain for 2 lines (close to center)
 	gain2b = 12 #Gain for 2 lines (far from center)
@@ -119,27 +120,27 @@ def find_dir(lines):
 		right = lines[1][2] #right x2 point
 		dist_from_center = ((left + right) / 2) - (WIDTH / 2) #Calculate cars distance from the center of the lines
 		if abs(dist_from_center) < 25: #If car is close to center, lower gain
-			DIRECTION = MID + (dist_from_center * gain2a)
-			SPEED = FORWARD
+			direction = MID + (dist_from_center * gain2a)
+			speed = FORWARD
 		elif abs(dist_from_center) < 35: #If car is close to center, lower gain
-			DIRECTION = MID + (dist_from_center * gain2b)
-			SPEED = FORWARD
+			direction = MID + (dist_from_center * gain2b)
+			speed = FORWARD
 		else: #If car is farther from center, higher gain to get back to center faster
-			DIRECTION = MID + (dist_from_center * gain2c) 
-			SPEED = FORWARD + 5
+			direction = MID + (dist_from_center * gain2c) 
+			speed = FORWARD + 5
 	elif len(lines) == 1: #If only 1 line is found
 		x1, y1, x2, y2 = lines[0]
 		slope = (y2 - y1) / (x2 - x1)
-		DIRECTION = MID - (slope * gain1) #Find direction based on the slope of the line
-		SPEED = FORWARD + 5
+		direction = MID - (slope * gain1) #Find direction based on the slope of the line
+		speed = FORWARD + 5
 	else: #No lines found
-		DIRECTION = MID
-		SPEED = STOP #Don't move
+		direction = MID
+		speed = STOP #Don't move
 			
-	if DIRECTION < LEFT: #If the calculations put the steering out of range, make it the max for that direction
-		DIRECTION = LEFT
-	elif DIRECTION > RIGHT:
-		DIRECTION = RIGHT
+	if direction < LEFT: #If the calculations put the steering out of range, make it the max for that direction
+		direction = LEFT
+	elif direction > RIGHT:
+		direction = RIGHT
 #-------------------------------------------------------------------------------
 def show_lines(line_img, lines):
 	if lines != None:
@@ -148,8 +149,8 @@ def show_lines(line_img, lines):
 	return line_img
 #-------------------------------------------------------------------------------
 def drive():
-	pi.set_servo_pulsewidth(STEER, DIRECTION) #Set steering direction
-	pi.set_servo_pulsewidth(ESC, SPEED) #Set speed
+	pi.set_servo_pulsewidth(STEER, direction) #Set steering direction
+	pi.set_servo_pulsewidth(ESC, speed) #Set speed
 
 #-------------------------------------------------------------------------------
 	
