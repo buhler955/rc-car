@@ -1,5 +1,5 @@
 #==================================================================================
-# Program: Semi Autonomous Car Project
+# Program: Self-Driving RC Car Project
 # Programmer: Austin Buhler
 # Class: CIRC 224
 # Date: December 5, 2019
