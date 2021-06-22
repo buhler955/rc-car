@@ -1,8 +1,12 @@
 #==================================================================================
-# Program: Self-Driving RC Car Project
+# Program: Semi Autonomous Car Project
 # Programmer: Austin Buhler
-# Class: CIRC 224
-# Date: December 5, 2019
+# The Self-Driving RC Car was a computer interfacing project from my third semester in Computer Engineering Technology at Sask Polytech.
+# This project uses a Vaterra Kemora RC Car with a Raspberry Pi and PiCamera mounted to it. 
+# The PiCamera is used to view the "road" the car is on. A Python program uses OpenCV to detect the lines on the road. 
+# Calculations are performed based on the position and slope of the lines. 
+# Finally, the PWM output of the GPIO pins are changed to control the steering and speed of the car accordingly. 
+# The road used for the demo was an oval-shaped track of white tape on black posterboard.
 #----------------------------------------------------------------------------------
 # Sources
 #----------------------------------------------------------------------------------
@@ -32,14 +36,14 @@ raw_capture = PiRGBArray(cam, size=(WIDTH, HEIGHT))
 #Set up esc and steering servo constants and variables
 
 #-------------------------------------------------------------------------------
-ESC = 18 #GPIO for ESC (Motor)
+ESC = 18 #GPIO pin for ESC (Motor)
 pi = pigpio.pi();
-pi.set_servo_pulsewidth(ESC, 0)
+pi.set_servo_pulsewidth(ESC, 0) #Start with ESC off - car stopped
 STOP = 1500 #Pulsewidth for stop - in microseconds
 FORWARD = 1400 #Pulsewidth for moving forward - in microseconds
 speed = 1400 #Current Speed pulsewidth- in microseconds
 
-STEER = 13 #GPIO for steering servo
+STEER = 13 #GPIO pin for steering servo
 MID = 1400 #Pulsewidth for steering straight - in microseconds
 LEFT = 1050 #Pulsewidth for full left - in microseconds
 RIGHT = 1750 #Pulsewidth for full right - in microseconds
@@ -59,21 +63,31 @@ def get_canny(img):
 	return canny
 #-------------------------------------------------------------------------------
 def get_area(img):
-	rect = np.array([[(0, 240), (0, 100), (320, 100), (320, 240)]])
+	rect = np.array([[(0, 240), (0, 100), (320, 100), (320, 240)]]) #Region of interest coordinates
 	mask = np.zeros_like(img)
 	cv2.fillPoly(mask, rect, 255) #Put white rectangle over region of interest on image
 	masked_img = cv2.bitwise_and(img, mask) #Logic AND, only shows white pixels in reg of interest
 	return masked_img
 #-------------------------------------------------------------------------------
+def get_line(image, line_specs):
+	slope, intercept = line_specs
+	slope = round(slope, 8) #Round to 8 decimal places
+	intercept = round(intercept, 8)
+	y1 = image.shape[0] #line starts at bottom of image
+	y2 = int(y1*(2/5)) # goes up to 2/5 of way DOWN image
+	x1 = int((y1-intercept)/slope) #From y=mx+b (Slope intercept form)
+	x2 = int((y2-intercept)/slope) 
+	return np.array([x1, y1, x2, y2])
+#-------------------------------------------------------------------------------
 def average_lines(image, lines):
     global direction
 	left = [] #Lines on left of screen
 	right = [] #Lines of right of screen
-	lanes = []
+	lanes = [] #Holds final left line and right line
 	if lines != None:
 		for line in lines:
 			x1, y1, x2, y2 = line.reshape(4) #Get the 2 points of each line
-			if x1 == x2: #code will crash
+			if x1 == x2: #Ignore line if it is single point
 				continue
 			equation = np.polyfit((x1, x2), (y1, y2), 1) #Gives slope and y intercept
 			slope = equation[0]
@@ -97,19 +111,10 @@ def average_lines(image, lines):
 			direction = MID	
 	return np.array(lanes)
 #-------------------------------------------------------------------------------
-def get_line(image, line_specs):
-	slope, intercept = line_specs
-	slope = round(slope, 8) #Round to 8 decimal places
-	intercept = round(intercept, 8)
-	y1 = image.shape[0] #line starts at bottom of image
-	y2 = int(y1*(2/5)) # goes up to 2/5 of way DOWN image
-	x1 = int((y1-intercept)/slope) #From y=mx+b (Slope intercept form)
-	x2 = int((y2-intercept)/slope) 
-	return np.array([x1, y1, x2, y2])
-#-------------------------------------------------------------------------------
 def find_dir(lines):
 	global direction
 	global speed
+    #Gain values are used to adjust magnitude of turn based on the cars distance from the center of the lane
 	gain1 = 480 #Gain for 1 line
 	gain2a = 6 #Gain for 2 lines (close to center)
 	gain2b = 12 #Gain for 2 lines (far from center)
@@ -157,26 +162,29 @@ def drive():
 #Loop for processing each frame (Main)
 
 #-------------------------------------------------------------------------------
-for frame in cam.capture_continuous(raw_capture, format='bgr', use_video_port=True):
-	img = frame.array #Current frame
-		
-	canny = get_canny(img) #Black and white image
-	area = get_area(canny) #Trim the frame for faster processing
-	lines = cv2.HoughLinesP(area, 1, np.pi/180, 50, np.array([]), 50, 10) #find all lines in image
-	avg_lines = average_lines(img, lines) #Average the lines found into 1 or 2 lane lines
-	find_dir(avg_lines) #Find direction based on the average lines
-	line_img = show_lines(img, avg_lines) #Draw out the 2 lines
-	drive()	#Set speed and steering
-	
-	cv2.imshow("lines", line_img) #Preview window
-	key = cv2.waitKey(1) & 0xFF #Key input
-	raw_capture.truncate(0) #Reset frame
-	
-	if key == ord("p"):
-		pi.set_servo_pulsewidth(STEER, MID) #Reset straight
-		pi.set_servo_pulsewidth(ESC, STOP) #Neutral
-		break #End the loop, ending the program
-
+def main():
+    for frame in cam.capture_continuous(raw_capture, format='bgr', use_video_port=True):
+        img = frame.array #Current frame
+            
+        canny = get_canny(img) #Black and white image
+        area = get_area(canny) #Trim the frame for faster processing
+        lines = cv2.HoughLinesP(area, 1, np.pi/180, 50, np.array([]), 50, 10) #find all lines in image
+        avg_lines = average_lines(img, lines) #Average the lines found into 1 or 2 lane lines
+        find_dir(avg_lines) #Find direction based on the average lines
+        line_img = show_lines(img, avg_lines) #Draw out the 2 lines
+        drive()	#Set speed and steering
+        
+        cv2.imshow("lines", line_img) #Preview window
+        key = cv2.waitKey(1) & 0xFF #Key input
+        raw_capture.truncate(0) #Reset frame
+        
+        if key == ord("p"):
+            pi.set_servo_pulsewidth(STEER, MID) #Reset straight
+            pi.set_servo_pulsewidth(ESC, STOP) #Neutral
+            break #End the loop, ending the program
+    
+    cv2.destroyAllWindows() #Close the windows when program is finished
 #-------------------------------------------------------------------------------
 
-cv2.destroyAllWindows() #Close the windows
+main() #Run program
+
